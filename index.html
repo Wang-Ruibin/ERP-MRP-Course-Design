@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MRP 物料需求计划系统</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand-block">
+      <p class="eyebrow">ERP Course Project</p>
+      <h1>MRP 物料需求计划系统</h1>
+      <p class="subtitle">输入物料、BOM、库存与需求，自动生成订货量和计划下达时间报表。</p>
+    </div>
+    <div class="toolbar">
+      <button id="loadDbBtn" type="button">读取数据库</button>
+      <button id="saveDbBtn" type="button">保存数据库</button>
+      <button id="initDbBtn" type="button">初始化数据库</button>
+      <button id="exportExcelBtn" type="button" class="primary">导出 Excel</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <section class="input-pane">
+      <div class="section-heading">
+        <div>
+          <p class="mini-label">Data Setup</p>
+          <h2>基础参数与主数据</h2>
+        </div>
+        <label class="horizon-control">
+          <span>计划周期</span>
+          <input id="horizonInput" type="number" min="1" max="52" step="1" value="12">
+        </label>
+      </div>
+
+      <section class="module-block">
+        <div class="table-header">
+          <div>
+            <p class="mini-label">Items</p>
+            <h3>物料主数据</h3>
+          </div>
+          <button id="addItemBtn" type="button">新增物料</button>
+        </div>
+        <div class="table-wrap">
+          <table id="itemsTable">
+            <thead>
+              <tr>
+                <th>类别</th>
+                <th>编码</th>
+                <th>名称</th>
+                <th>提前期</th>
+                <th>库存</th>
+                <th>已分配</th>
+                <th>安全库存</th>
+                <th>批量方式</th>
+                <th>固定批量</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="module-block">
+        <div class="table-header">
+          <div>
+            <p class="mini-label">BOM</p>
+            <h3>产品结构</h3>
+          </div>
+          <button id="addBomBtn" type="button">新增关系</button>
+        </div>
+        <div class="table-wrap">
+          <table id="bomTable">
+            <thead>
+              <tr>
+                <th>父项</th>
+                <th>子项</th>
+                <th>单台用量</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="module-block">
+        <div class="table-header">
+          <div>
+            <p class="mini-label">Demand</p>
+            <h3>独立需求</h3>
+          </div>
+          <button id="addDemandBtn" type="button">新增需求</button>
+        </div>
+        <div class="table-wrap">
+          <table id="demandsTable">
+            <thead>
+              <tr>
+                <th>物料</th>
+                <th>需求周</th>
+                <th>需求量</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <section class="report-pane">
+      <div class="summary-strip" id="summaryStrip"></div>
+      <div id="dbStatusBar" class="db-status-bar"></div>
+      <div id="warningBox"></div>
+
+      <nav class="tabs" aria-label="报表视图">
+        <button class="tab active" data-tab="orders" type="button">订货建议</button>
+        <button class="tab" data-tab="mrp" type="button">MRP 明细</button>
+        <button class="tab" data-tab="bom" type="button">BOM 图</button>
+        <button class="tab" data-tab="history" type="button">历史查询</button>
+      </nav>
+
+      <section id="ordersPanel" class="tab-panel active">
+        <div class="section-heading">
+          <div>
+            <p class="mini-label">Report</p>
+            <h2>各零部件订货量及计划下达时间</h2>
+          </div>
+          <span id="updatedAt" class="updated-at"></span>
+        </div>
+        <div class="table-wrap report-table">
+          <table id="ordersTable">
+            <thead>
+              <tr>
+                <th>物料</th>
+                <th>计划下达周</th>
+                <th>计划接收周</th>
+                <th>订货量</th>
+                <th>需求来源</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="mrpPanel" class="tab-panel">
+        <div id="mrpPager" class="mrp-pager"></div>
+        <div id="mrpTables" class="mrp-list"></div>
+      </section>
+
+      <section id="bomPanel" class="tab-panel">
+        <div id="bomCanvas" class="bom-canvas"></div>
+      </section>
+
+      <section id="historyPanel" class="tab-panel">
+        <div class="section-heading">
+          <div>
+            <p class="mini-label">History</p>
+            <h2>历史导出记录</h2>
+          </div>
+        </div>
+        <div class="table-wrap report-table">
+          <table id="historyTable">
+            <thead>
+              <tr>
+                <th>时间</th>
+                <th>名称</th>
+                <th>物料数</th>
+                <th>订货建议数</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <template id="emptyStateTemplate">
+    <div class="empty-state">
+      <h3>还没有可展示的数据</h3>
+      <p>先录入物料和需求，或者初始化数据库样例。</p>
+    </div>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
