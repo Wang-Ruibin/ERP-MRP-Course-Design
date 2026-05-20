@@ -268,7 +268,7 @@ function syncStateFromTables() {
       lotRule: readField(row, "lotRule") === "FIXED" ? "FIXED" : "L4L",
       lotSize: clampNumber(readField(row, "lotSize"), 0, Number.MAX_SAFE_INTEGER, 0)
     }))
-    .filter((item) => item.code);
+    .filter((item) => item.code || item.name || item.onHand || item.allocated || item.safetyStock || item.lotSize);
 
   state.bom = Array.from(refs.bomTableBody.querySelectorAll("tr"))
     .map((row) => ({
@@ -276,7 +276,7 @@ function syncStateFromTables() {
       child: readField(row, "child").toUpperCase().trim(),
       quantity: clampNumber(readField(row, "quantity"), 1, Number.MAX_SAFE_INTEGER, 1)
     }))
-    .filter((row) => row.parent && row.child);
+    .filter((row) => row.parent || row.child);
 
   state.demands = Array.from(refs.demandsTableBody.querySelectorAll("tr"))
     .map((row) => ({
@@ -284,7 +284,7 @@ function syncStateFromTables() {
       week: clampNumber(readField(row, "week"), 1, 52, 1),
       quantity: clampNumber(readField(row, "quantity"), 0, Number.MAX_SAFE_INTEGER, 0)
     }))
-    .filter((row) => row.itemCode && row.quantity > 0);
+    .filter((row) => row.itemCode || row.quantity > 0);
 
   sortStateData(state);
   persistState();
@@ -1125,38 +1125,52 @@ function sortStateData(targetState) {
   const meta = getItemMeta(targetState.items, targetState.bom, targetState.demands);
   const itemLookup = new Map(targetState.items.map((item) => [item.code, item]));
 
-  targetState.items.sort((left, right) => compareItems(left, right, meta));
-  targetState.bom.sort((left, right) => {
-    const parentCmp = compareCodes(left.parent, right.parent, meta, itemLookup);
-    if (parentCmp !== 0) {
-      return parentCmp;
-    }
-    const childCmp = compareCodes(left.child, right.child, meta, itemLookup);
-    if (childCmp !== 0) {
-      return childCmp;
-    }
-    return left.quantity - right.quantity;
-  });
-  targetState.demands.sort((left, right) => {
-    const codeCmp = compareCodes(left.itemCode, right.itemCode, meta, itemLookup);
-    if (codeCmp !== 0) {
-      return codeCmp;
-    }
-    if (left.week !== right.week) {
-      return left.week - right.week;
-    }
-    return left.quantity - right.quantity;
-  });
+  const completeItems = targetState.items
+    .filter((item) => item.code)
+    .sort((left, right) => compareItems(left, right, meta));
+  const draftItems = targetState.items.filter((item) => !item.code);
+  targetState.items.splice(0, targetState.items.length, ...completeItems, ...draftItems);
+
+  const completeBom = targetState.bom
+    .filter((row) => row.parent && row.child)
+    .sort((left, right) => {
+      const parentCmp = compareCodes(left.parent, right.parent, meta, itemLookup);
+      if (parentCmp !== 0) {
+        return parentCmp;
+      }
+      const childCmp = compareCodes(left.child, right.child, meta, itemLookup);
+      if (childCmp !== 0) {
+        return childCmp;
+      }
+      return left.quantity - right.quantity;
+    });
+  const draftBom = targetState.bom.filter((row) => !(row.parent && row.child));
+  targetState.bom.splice(0, targetState.bom.length, ...completeBom, ...draftBom);
+
+  const completeDemands = targetState.demands
+    .filter((row) => row.itemCode && row.quantity > 0)
+    .sort((left, right) => {
+      const codeCmp = compareCodes(left.itemCode, right.itemCode, meta, itemLookup);
+      if (codeCmp !== 0) {
+        return codeCmp;
+      }
+      if (left.week !== right.week) {
+        return left.week - right.week;
+      }
+      return left.quantity - right.quantity;
+    });
+  const draftDemands = targetState.demands.filter((row) => !(row.itemCode && row.quantity > 0));
+  targetState.demands.splice(0, targetState.demands.length, ...completeDemands, ...draftDemands);
 }
 
 function getItemMeta(items, bom, demands) {
-  const childSet = new Set((bom || []).map((relation) => upperCode(relation.child)));
-  const demandSet = new Set((demands || []).map((demand) => upperCode(demand.itemCode)));
+  const childSet = new Set((bom || []).map((relation) => upperCode(relation.child)).filter(Boolean));
+  const demandSet = new Set((demands || []).map((demand) => upperCode(demand.itemCode)).filter(Boolean));
   const meta = new Map();
 
   (items || []).forEach((item) => {
     const code = upperCode(item.code);
-    const isProduct = demandSet.has(code) || !childSet.has(code);
+    const isProduct = code ? (demandSet.has(code) || !childSet.has(code)) : true;
     meta.set(code, {
       kind: isProduct ? "product" : "component",
       rank: isProduct ? 0 : 1,
@@ -1169,6 +1183,16 @@ function getItemMeta(items, bom, demands) {
 }
 
 function compareItems(left, right, meta) {
+  if (!left.code && !right.code) {
+    return 0;
+  }
+  if (!left.code) {
+    return 1;
+  }
+  if (!right.code) {
+    return -1;
+  }
+
   const leftMeta = meta.get(left.code) || { rank: 0, sortName: left.name || left.code };
   const rightMeta = meta.get(right.code) || { rank: 0, sortName: right.name || right.code };
   if (leftMeta.rank !== rightMeta.rank) {
